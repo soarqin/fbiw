@@ -62,7 +62,7 @@ END
 IDD_FBIW_DIALOG DIALOGEX 0, 0, 259, 135
 STYLE WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_ACCEPTFILES
-CAPTION "FBI Remote Installer for Windows"
+CAPTION "FBI Remote Installer for Windows v0.2"
 FONT 9, "Tahoma"
 BEGIN
     LTEXT           "Remote IP:",IDC_STATIC,17,15,41,8
