@@ -59,30 +59,27 @@ END
 // Dialog
 //
 
-IDD_FBIW_DIALOG DIALOGEX 0, 0, 259, 202
+IDD_FBIW_DIALOG DIALOGEX 0, 0, 347, 202
 STYLE WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_ACCEPTFILES
-CAPTION "FBI Remote Installer for Windows v0.3"
-FONT 9, "Tahoma", 0, 0, 0x1
+CAPTION "FBI Remote Installer for Windows"
+FONT 9, "Tahoma"
 BEGIN
     LTEXT           "Remote IP:",IDC_STATIC,17,15,41,8
     LTEXT           "CIA Files:",IDC_STATIC,17,35,37,8
     EDITTEXT        IDC_EDIT_IP,59,14,99,12,ES_AUTOHSCROLL
     CONTROL         "OLD Version (FBI 1.4)",IDC_CHECK_OLD,"Button",
-                    BS_AUTOCHECKBOX | WS_TABSTOP,163,15,89,10
-    LISTBOX         IDC_FILELIST,59,34,163,94,LBS_NOINTEGRALHEIGHT | 
+                    BS_AUTOCHECKBOX | WS_TABSTOP,170,15,89,10
+    LISTBOX         IDC_FILELIST,59,34,255,130,LBS_NOINTEGRALHEIGHT | 
                     WS_VSCROLL | WS_TABSTOP
-    PUSHBUTTON      "+",IDC_BTN_SELFILE,226,34,14,14
-    PUSHBUTTON      "-",IDC_BTN_DELFILE,226,54,14,14
-    PUSHBUTTON      "UP",IDC_BTN_MOVEUP,226,74,14,14
-    PUSHBUTTON      "DN",IDC_BTN_MOVEDOWN,226,94,14,14
-    PUSHBUTTON      "CL",IDC_BTN_CLEAR,226,114,14,14
-    DEFPUSHBUTTON   "START",IDC_BTN_GO,105,136,50,14
-    LTEXT           "",IDC_INFO,7,159,245,8
-    LTEXT           "",IDC_INFO2,7,172,117,8
-    LTEXT           "",IDC_INFO3,135,172,117,8
-    CONTROL         "",IDC_PROGRESS,"msctls_progress32",PBS_SMOOTH | 
-                    WS_BORDER,7,185,245,10
+    PUSHBUTTON      "+",IDC_BTN_SELFILE,319,34,14,14
+    PUSHBUTTON      "-",IDC_BTN_DELFILE,319,54,14,14
+    PUSHBUTTON      "UP",IDC_BTN_MOVEUP,319,74,14,14
+    PUSHBUTTON      "DN",IDC_BTN_MOVEDOWN,319,94,14,14
+    PUSHBUTTON      "CL",IDC_BTN_CLEAR,319,114,14,14
+    DEFPUSHBUTTON   "START",IDC_BTN_GO,147,169,50,14
+    CONTROL         "Purge on finished",IDC_CHECK_PURGE,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,264,15,70,10
 END
 
 
@@ -97,7 +94,7 @@ BEGIN
     IDD_FBIW_DIALOG, DIALOG
     BEGIN
         LEFTMARGIN, 7
-        RIGHTMARGIN, 252
+        RIGHTMARGIN, 340
         TOPMARGIN, 7
         BOTTOMMARGIN, 195
     END
@@ -121,8 +118,8 @@ IDI_ICON                ICON    DISCARDABLE     "res\\fbiw.ico"
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,3,0,1
- PRODUCTVERSION 0,3,0,1
+ FILEVERSION 0,4,0,1
+ PRODUCTVERSION 0,4,0,1
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -140,14 +137,14 @@ BEGIN
             VALUE "Comments", "\0"
             VALUE "CompanyName", " \0"
             VALUE "FileDescription", "FBIW\0"
-            VALUE "FileVersion", "0, 3, 0, 1\0"
+            VALUE "FileVersion", "0, 4, 0, 1\0"
             VALUE "InternalName", "FBIW\0"
             VALUE "LegalCopyright", "Copyright 2016, Soar Qin\0"
             VALUE "LegalTrademarks", "\0"
             VALUE "OriginalFilename", "FBIW.exe\0"
             VALUE "PrivateBuild", "\0"
             VALUE "ProductName", "FBIW\0"
-            VALUE "ProductVersion", "0, 3, 0, 1\0"
+            VALUE "ProductVersion", "0, 4, 0, 1\0"
             VALUE "SpecialBuild", "\0"
         END
     END

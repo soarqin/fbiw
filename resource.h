@@ -13,10 +13,9 @@
 #define IDC_BTN_CLEAR                   1006
 #define IDC_BTN_GO                      1007
 #define IDC_PROGRESS                    1008
-#define IDC_INFO                        1009
-#define IDC_INFO2                       1010
-#define IDC_INFO3                       1011
-#define IDC_CHECK_OLD                   1012
+#define IDC_CHECK_OLD                   1009
+#define IDC_STATUSBAR                   1010
+#define IDC_CHECK_PURGE                 1010
 
 // Next default values for new objects
 // 
@@ -24,7 +23,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        103
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1013
+#define _APS_NEXT_CONTROL_VALUE         1011
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

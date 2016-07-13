@@ -6,3 +6,4 @@
 
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "version.lib")

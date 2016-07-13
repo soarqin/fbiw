@@ -16,6 +16,24 @@ UINT64 htonll(UINT64 value) {
 }
 #endif
 
+BOOL GetFileVersion(LPCTSTR strFile, UINT64& ver) {
+    TCHAR szVersionBuffer[8192] = _T("");
+    DWORD dwVerSize;
+    DWORD dwHandle;
+    dwVerSize = GetFileVersionInfoSize(strFile, &dwHandle);
+    if (dwVerSize == 0)
+        return FALSE;
+    if (GetFileVersionInfo(strFile, 0, dwVerSize, szVersionBuffer)) {
+        VS_FIXEDFILEINFO * pInfo;
+        unsigned int nInfoLen;
+        if (VerQueryValue(szVersionBuffer, _T("\\"), (void**)&pInfo, &nInfoLen)) {
+			ver = ((UINT64)pInfo->dwFileVersionMS << 32) | (UINT64)pInfo->dwFileVersionLS;
+            return TRUE;
+        }
+    }
+    return FALSE;   
+}  
+
 class CMainDlg : public CDialogImpl<CMainDlg>, public CMessageFilter
 {
 public:
@@ -74,7 +92,6 @@ public:
 			SetMsg(_T("Connected to remote"));
 			UINT fcount = GetPendingCount();
 			UINT32 cnt = htonl(fcount);
-			StartTiming();
 			if (old_) {
 				status = 2;
 				WSAAsyncSelect(sock, m_hWnd, WM_CUSTOM_NETWORK_MSG, FD_WRITE | FD_CLOSE);
@@ -196,6 +213,17 @@ public:
 		// center the dialog on the screen
 		CenterWindow();
 
+		TCHAR path[256];
+		GetModuleFileName(NULL, path, 256);
+		UINT64 ver;
+		GetFileVersion(path, ver);
+		{
+			TCHAR title[256];
+			GetWindowText(title, 256);
+			wsprintf(title, _T("%s v%u.%u"), title, (UINT32)(ver >> 48), (UINT32)(ver >> 32) & 0xFFFF);
+			SetWindowText(title);
+		}
+
 		// set icons
 		HICON hIcon = (HICON)::LoadImage(_Module.GetResourceInstance(), MAKEINTRESOURCE(IDI_ICON), 
 			IMAGE_ICON, ::GetSystemMetrics(SM_CXICON), ::GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR);
@@ -203,21 +231,23 @@ public:
 		HICON hIconSmall = (HICON)::LoadImage(_Module.GetResourceInstance(), MAKEINTRESOURCE(IDI_ICON), 
 			IMAGE_ICON, ::GetSystemMetrics(SM_CXSMICON), ::GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR);
 		SetIcon(hIconSmall, FALSE);
+		sBar_.Create(m_hWnd, rcDefault, NULL, WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, 0, IDC_STATUSBAR);
+		RECT rect;
+		GetClientRect(&rect);
+		int w = rect.right - rect.left;
+		int ind[5] = {w / 2, w * 2 / 3, w * 3 / 4, w - 1};
+		sBar_.SetParts(4, ind);
+		sBar_.GetRect(3, &rect);
+		prog_.Create(sBar_.m_hWnd, &rect, NULL, WS_CHILD | WS_VISIBLE | PBS_SMOOTH, 0, IDC_PROGRESS);
+		prog_.SetRange(0, 100);
 
 		// register object for message filtering
 		CMessageLoop* pLoop = _Module.GetMessageLoop();
 		pLoop->AddMessageFilter(this);
 
 		flist_ = GetDlgItem(IDC_FILELIST);
-		msg_ = GetDlgItem(IDC_INFO);
-		msg2_ = GetDlgItem(IDC_INFO2);
-		msg3_ = GetDlgItem(IDC_INFO3);
-		prog_ = GetDlgItem(IDC_PROGRESS);
 		go_ = GetDlgItem(IDC_BTN_GO);
-		prog_.SetRange(0, 100);
 
-		TCHAR path[256];
-		GetModuleFileName(NULL, path, 256);
 		PathRemoveFileSpec(path);
 		PathAppend(path, _T("FBIW.ini"));
 		TCHAR addr[256];
@@ -225,6 +255,8 @@ public:
 			SetDlgItemText(IDC_EDIT_IP, addr);
 		UINT r = GetPrivateProfileInt(_T("main"), _T("oldver"), 0, path);
 		CheckDlgButton(IDC_CHECK_OLD, r);
+		r = GetPrivateProfileInt(_T("main"), _T("purge"), 0, path);
+		CheckDlgButton(IDC_CHECK_PURGE, r);
 		TCHAR files[4096];
 		if (GetPrivateProfileString(_T("main"), _T("files"), _T(""), files, 4096, path)) {
 			TCHAR* pf = files;
@@ -258,6 +290,7 @@ public:
 		PathAppend(path, _T("FBIW.ini"));
 		WritePrivateProfileString(_T("main"), _T("address"), addr, path);
 		WritePrivateProfileString(_T("main"), _T("oldver"), IsDlgButtonChecked(IDC_CHECK_OLD) ? _T("1") : _T("0"), path);
+		WritePrivateProfileString(_T("main"), _T("purge"), IsDlgButtonChecked(IDC_CHECK_PURGE) ? _T("1") : _T("0"), path);
 		TCHAR files[4096] = {0};
 		int count = flist_.GetCount();
 		for (int i = 0; i < count; ++i) {
@@ -266,7 +299,10 @@ public:
 			if (lstrlen(files) + 1 + lstrlen(fname) >= 4096) break;
 			if (i > 0)
 				lstrcat(files, _T("|"));
-			lstrcat(files, fname);
+			if (fname[0] == _T(' ') && fname[1] == _T('-') && fname[2] == _T('>') && fname[3] == _T(' '))
+				lstrcat(files, fname + 4);
+			else
+				lstrcat(files, fname);
 		}
 		WritePrivateProfileString(_T("main"), _T("files"), files, path);
 		DestroyWindow();
@@ -336,6 +372,7 @@ public:
 		old_ = IsDlgButtonChecked(IDC_CHECK_OLD) != 0;
 		OpenNextFile();
 		UpdateFileListButtons();
+		StartTiming();
 		StartConnect();
 		return 0;
 	}
@@ -377,7 +414,21 @@ private:
 
 	bool OpenNextFile() {
 		TCHAR fname[256];
-		if (!GetNextFileName(fname)) return false;
+		int n = flist_.GetCount();
+		bool found = false;
+		for (int i = 0; i < n; ++i) {
+			if (flist_.GetItemData(i) == 0) {
+				flist_.GetText(i, fname);
+				TCHAR nname[260] = _T(" -> ");
+				lstrcat(nname, fname);
+				flist_.DeleteString(i);
+				flist_.InsertString(i, nname);
+				flist_.SetItemData(i, 2);
+				found = true;
+				break;
+			}
+		}
+		if (!found) return false;
 		hFile_ = CreateFile(fname, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 		if (hFile_ == NULL || hFile_ == INVALID_HANDLE_VALUE) {
 			SetMsg(_T("Unable to open file for reading"));
@@ -407,7 +458,9 @@ private:
 		UINT32 per = (UINT32)(totalRead_ * 100ui64 / totalSize_);
 		prog_.SetPos(per);
 		TCHAR ntxt[64];
-		wsprintf (ntxt, _T("%u%% (%I64u/%I64u)"), per, totalRead_, totalSize_);
+		wsprintf (ntxt, _T("%I64u/%I64u"), totalRead_, totalSize_);
+		SetMsg(ntxt);
+		wsprintf (ntxt, _T("%u%%"), per);
 		SetMsg3(ntxt);
 
 		lastBytes_ = 0;
@@ -415,15 +468,15 @@ private:
 	}
 
 	inline void SetMsg(LPCTSTR txt) {
-		SetDlgItemText(IDC_INFO, txt);
+		sBar_.SetText(0, txt);
 	}
 
 	inline void SetMsg2(LPCTSTR txt) {
-		SetDlgItemText(IDC_INFO2, txt);
+		sBar_.SetText(1, txt);
 	}
 
 	inline void SetMsg3(LPCTSTR txt) {
-		SetDlgItemText(IDC_INFO3, txt);
+		sBar_.SetText(2, txt);
 	}
 
 	inline void StartTiming() {
@@ -456,10 +509,25 @@ private:
 		frequency_ = 0;
 		lastTick_ = 0.;
 		lastBytes_ = 0;
-		::EnableWindow(GetDlgItem(IDC_BTN_SELFILE), TRUE);
-		::EnableWindow(GetDlgItem(IDC_BTN_DELFILE), TRUE);
-		::EnableWindow(GetDlgItem(IDC_BTN_MOVEUP), TRUE);
-		::EnableWindow(GetDlgItem(IDC_BTN_MOVEDOWN), TRUE);
+
+		int n = flist_.GetCount();
+		for (int i = 0; i < n; ++i) {
+			if (flist_.GetItemData(i) == 2) {
+				TCHAR n[260];
+				flist_.GetText(i, n);
+				flist_.DeleteString(i);
+				flist_.InsertString(i, n + 4);
+				flist_.SetItemData(i, 0);
+			}
+		}
+		if (IsDlgButtonChecked(IDC_CHECK_PURGE)) {
+			int n = flist_.GetCount();
+			for (int i = n - 1; i >= 0; --i) {
+				if (flist_.GetItemData(i) == 1)
+					flist_.DeleteString(i);
+			}
+		}
+
 		UpdateFileListButtons();
 	}
 
@@ -467,7 +535,7 @@ private:
 		UINT32 result = 0;
 		int n = flist_.GetCount();
 		for (int i = 0; i < n; ++i) {
-			if (flist_.GetItemData(i) == 0)
+			if (flist_.GetItemData(i) != 1)
 				++result;
 		}
 		return result;
@@ -476,26 +544,16 @@ private:
 	inline void SetPendingFinished() {
 		int n = flist_.GetCount();
 		for (int i = 0; i < n; ++i) {
-			if (flist_.GetItemData(i) == 0) {
-				TCHAR fn[260] = _T("<O> ");
-				flist_.GetText(i, fn + 4);
+			if (flist_.GetItemData(i) == 2) {
+				TCHAR fn[260];
+				flist_.GetText(i, fn);
+				memcpy(fn, _T("<O> "), 4 * sizeof(TCHAR));
 				flist_.DeleteString(i);
 				flist_.InsertString(i, fn);
 				flist_.SetItemData(i, 1);
 				break;
 			}
 		}
-	}
-
-	inline bool GetNextFileName(LPTSTR fn) {
-		int n = flist_.GetCount();
-		for (int i = 0; i < n; ++i) {
-			if (flist_.GetItemData(i) == 0) {
-				flist_.GetText(i, fn);
-				return true;
-			}
-		}
-		return false;
 	}
 
 	void UpdateFileListButtons() {
@@ -527,10 +585,10 @@ private:
 private:
 	int sock;
 	int status;
-	CStatic msg_, msg2_, msg3_;
 	CListBox flist_;
 	CProgressBarCtrl prog_;
 	CButton go_;
+	CStatusBarCtrl sBar_;
 	HANDLE hFile_;
 	char* sendbuf_;
 	UINT32 sendPos_;
