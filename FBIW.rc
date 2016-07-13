@@ -59,25 +59,30 @@ END
 // Dialog
 //
 
-IDD_FBIW_DIALOG DIALOGEX 0, 0, 259, 135
+IDD_FBIW_DIALOG DIALOGEX 0, 0, 259, 202
 STYLE WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_ACCEPTFILES
-CAPTION "FBI Remote Installer for Windows v0.2"
-FONT 9, "Tahoma"
+CAPTION "FBI Remote Installer for Windows v0.3"
+FONT 9, "Tahoma", 0, 0, 0x1
 BEGIN
     LTEXT           "Remote IP:",IDC_STATIC,17,15,41,8
-    LTEXT           "CIA file:",IDC_STATIC,17,35,37,8
-    EDITTEXT        IDC_EDIT_IP,59,14,109,12,ES_AUTOHSCROLL
-    EDITTEXT        IDC_EDIT_FILE,59,34,166,12,ES_AUTOHSCROLL
-    PUSHBUTTON      "...",IDC_BTN_SELFILE,229,34,10,11
-    DEFPUSHBUTTON   "START",IDC_BTN_GO,105,70,50,14
-    LTEXT           "",IDC_INFO,7,93,245,8
-    LTEXT           "",IDC_INFO2,7,106,117,8
-    LTEXT           "",IDC_INFO3,135,106,117,8
-    CONTROL         "",IDC_PROGRESS,"msctls_progress32",PBS_SMOOTH | 
-                    WS_BORDER,7,118,245,10
+    LTEXT           "CIA Files:",IDC_STATIC,17,35,37,8
+    EDITTEXT        IDC_EDIT_IP,59,14,99,12,ES_AUTOHSCROLL
     CONTROL         "OLD Version (FBI 1.4)",IDC_CHECK_OLD,"Button",
-                    BS_AUTOCHECKBOX | WS_TABSTOP,37,54,85,10
+                    BS_AUTOCHECKBOX | WS_TABSTOP,163,15,89,10
+    LISTBOX         IDC_FILELIST,59,34,163,94,LBS_NOINTEGRALHEIGHT | 
+                    WS_VSCROLL | WS_TABSTOP
+    PUSHBUTTON      "+",IDC_BTN_SELFILE,226,34,14,14
+    PUSHBUTTON      "-",IDC_BTN_DELFILE,226,54,14,14
+    PUSHBUTTON      "UP",IDC_BTN_MOVEUP,226,74,14,14
+    PUSHBUTTON      "DN",IDC_BTN_MOVEDOWN,226,94,14,14
+    PUSHBUTTON      "CL",IDC_BTN_CLEAR,226,114,14,14
+    DEFPUSHBUTTON   "START",IDC_BTN_GO,105,136,50,14
+    LTEXT           "",IDC_INFO,7,159,245,8
+    LTEXT           "",IDC_INFO2,7,172,117,8
+    LTEXT           "",IDC_INFO3,135,172,117,8
+    CONTROL         "",IDC_PROGRESS,"msctls_progress32",PBS_SMOOTH | 
+                    WS_BORDER,7,185,245,10
 END
 
 
@@ -94,7 +99,7 @@ BEGIN
         LEFTMARGIN, 7
         RIGHTMARGIN, 252
         TOPMARGIN, 7
-        BOTTOMMARGIN, 128
+        BOTTOMMARGIN, 195
     END
 END
 #endif    // APSTUDIO_INVOKED
@@ -108,6 +113,52 @@ END
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
 IDI_ICON                ICON    DISCARDABLE     "res\\fbiw.ico"
+
+#ifndef _MAC
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 0,3,0,1
+ PRODUCTVERSION 0,3,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "Comments", "\0"
+            VALUE "CompanyName", " \0"
+            VALUE "FileDescription", "FBIW\0"
+            VALUE "FileVersion", "0, 3, 0, 1\0"
+            VALUE "InternalName", "FBIW\0"
+            VALUE "LegalCopyright", "Copyright 2016, Soar Qin\0"
+            VALUE "LegalTrademarks", "\0"
+            VALUE "OriginalFilename", "FBIW.exe\0"
+            VALUE "PrivateBuild", "\0"
+            VALUE "ProductName", "FBIW\0"
+            VALUE "ProductVersion", "0, 3, 0, 1\0"
+            VALUE "SpecialBuild", "\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+
+#endif    // !_MAC
+
 #endif    // Chinese (P.R.C.) resources
 /////////////////////////////////////////////////////////////////////////////
 

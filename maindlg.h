@@ -18,66 +18,10 @@ UINT64 htonll(UINT64 value) {
 
 class CMainDlg : public CDialogImpl<CMainDlg>, public CMessageFilter
 {
-private:
-	UINT32 fcount_;
-	TCHAR** files_;
-	int sock;
-	int status;
-	CStatic msg_, msg2_, msg3_;
-	CProgressBarCtrl prog_;
-	CButton go_;
-	HANDLE hFile_;
-	char* sendbuf_;
-	UINT32 sendPos_;
-	UINT32 sendSize_;
-	UINT64 totalRead_;
-	UINT64 totalSize_;
-	UINT64 frequency_;
-	double lastTick_;
-	UINT64 lastBytes_;
-	bool old_;
-
-	void StartTiming() {
-		LARGE_INTEGER freq;
-		QueryPerformanceFrequency(&freq);
-		frequency_ = freq.QuadPart;
-		lastTick_ = CurrTime();
-	}
-
-	double CurrTime() {
-		LARGE_INTEGER tm;
-		QueryPerformanceCounter(&tm);
-		return tm.QuadPart / (double)(INT64)frequency_;
-	}
-
-	void Cleanup() {
-		if (sock != 0) {
-			WSAAsyncSelect(sock, m_hWnd, WM_CUSTOM_NETWORK_MSG, 0);
-			closesocket(sock);
-			sock = 0;
-		}
-		if (fcount_ > 0) {
-			for (UINT32 i = 0; i < fcount_; ++i)
-				free(files_[i]);
-			free(files_);
-			files_ = NULL;
-			fcount_ = 0;
-		}
-		sendPos_ = 0;
-		sendSize_ = 0;
-		totalRead_ = 0;
-		totalSize_ = 0;
-		frequency_ = 0;
-		lastTick_ = 0.;
-		lastBytes_ = 0;
-	}
-
 public:
 	enum { IDD = IDD_FBIW_DIALOG };
 
 	CMainDlg() {
-		fcount_ = 0;
-		files_ = NULL;
 		sock = 0;
 		status = 0;
 		hFile_ = INVALID_HANDLE_VALUE;
@@ -100,50 +44,18 @@ public:
 		return ::IsDialogMessage(m_hWnd, pMsg);
 	}
 
-	void UpdateData() {
-	}
-
-	inline void SetProgress(BOOL force = FALSE) {
-		double now = CurrTime();
-		if (!force && now - lastTick_ < 0.5) return;
-		UINT64 spd = (UINT64)((double)(INT64)lastBytes_ / (now - lastTick_));
-		TCHAR spdtxt[32];
-		if (spd >= 1024 * 1024 * 10)
-			wsprintf(spdtxt, _T("%u.%03uMB/s"), (UINT32)(spd >> 20), (UINT32)((spd >> 10) & 0x3FF));
-		else if (spd >= 1024 * 10)
-			wsprintf(spdtxt, _T("%u.%03uKB/s"), (UINT32)(spd >> 10), (UINT32)(spd & 0x3FF));
-		else
-			wsprintf(spdtxt, _T("%uB/s"), (UINT32)spd);
-		SetMsg2(spdtxt);
-		UINT32 per = (UINT32)(totalRead_ * 100ui64 / totalSize_);
-		prog_.SetPos(per);
-		TCHAR ntxt[64];
-		wsprintf (ntxt, _T("%u%% (%I64u/%I64u)"), per, totalRead_, totalSize_);
-		SetMsg3(ntxt);
-
-		lastBytes_ = 0;
-		lastTick_ = now;
-	}
-
-	void SetMsg(LPCTSTR txt) {
-		SetDlgItemText(IDC_INFO, txt);
-	}
-
-	void SetMsg2(LPCTSTR txt) {
-		SetDlgItemText(IDC_INFO2, txt);
-	}
-
-	void SetMsg3(LPCTSTR txt) {
-		SetDlgItemText(IDC_INFO3, txt);
-	}
-
 	BEGIN_MSG_MAP_EX(CMainDlg)
 		MESSAGE_HANDLER(WM_CUSTOM_NETWORK_MSG, OnNetwork)
 		MSG_WM_INITDIALOG(OnInitDialog)
 		MSG_WM_CLOSE(OnCloseDialog)
 		MSG_WM_DROPFILES(OnDrop)
 		COMMAND_ID_HANDLER(IDC_BTN_SELFILE, OnSelFile)
+		COMMAND_ID_HANDLER(IDC_BTN_DELFILE, OnDelFile)
+		COMMAND_ID_HANDLER(IDC_BTN_MOVEUP, OnMoveUp)
+		COMMAND_ID_HANDLER(IDC_BTN_MOVEDOWN, OnMoveDown)
+		COMMAND_ID_HANDLER(IDC_BTN_CLEAR, OnClear)
 		COMMAND_ID_HANDLER(IDC_BTN_GO, OnStart)
+		COMMAND_HANDLER_EX(IDC_FILELIST, LBN_SELCHANGE, OnListSelChanged)
 	END_MSG_MAP()
 
 	LRESULT OnNetwork(UINT /*uMsg*/, WPARAM wParam, LPARAM lParam, BOOL& /*bHandled*/) {
@@ -160,7 +72,8 @@ public:
 			int nbuf = 32 * 1024;
 			setsockopt(sock, SOL_SOCKET, SO_SNDBUF, (char *)&nbuf, sizeof(nbuf));
 			SetMsg(_T("Connected to remote"));
-			UINT32 cnt = htonl(fcount_);
+			UINT fcount = GetPendingCount();
+			UINT32 cnt = htonl(fcount);
 			StartTiming();
 			if (old_) {
 				status = 2;
@@ -241,12 +154,8 @@ public:
 					sendPos_ = sendSize_ = 0;
 					if (status == 4) {
 						SetProgress(TRUE);
-						free(files_[0]);
-						memmove(files_, files_ + 1, sizeof(TCHAR*)*(fcount_ - 1));
-						--fcount_;
-						if (fcount_ == 0) {
-							free(files_);
-							files_ = NULL;
+						SetPendingFinished();
+						if (GetPendingCount() == 0) {
 							SetMsg(_T("Finished!"));
 							Cleanup();
 							break;
@@ -255,8 +164,16 @@ public:
 							Cleanup();
 							break;
 						}
-						status = 1;
-						WSAAsyncSelect(sock, m_hWnd, WM_CUSTOM_NETWORK_MSG, FD_READ | FD_CLOSE);
+						if (old_) {
+							status = 0;
+							WSAAsyncSelect(sock, m_hWnd, WM_CUSTOM_NETWORK_MSG, 0);
+							closesocket(sock);
+							sock = 0;
+							StartConnect();
+						} else {
+							status = 1;
+							WSAAsyncSelect(sock, m_hWnd, WM_CUSTOM_NETWORK_MSG, FD_READ | FD_CLOSE);
+						}
 					} else
 						WSAAsyncSelect(sock, m_hWnd, WM_CUSTOM_NETWORK_MSG, FD_WRITE | FD_CLOSE);
 				} else {
@@ -291,8 +208,10 @@ public:
 		CMessageLoop* pLoop = _Module.GetMessageLoop();
 		pLoop->AddMessageFilter(this);
 
+		flist_ = GetDlgItem(IDC_FILELIST);
 		msg_ = GetDlgItem(IDC_INFO);
-		msg2_ = GetDlgItem(IDC_INFO);
+		msg2_ = GetDlgItem(IDC_INFO2);
+		msg3_ = GetDlgItem(IDC_INFO3);
 		prog_ = GetDlgItem(IDC_PROGRESS);
 		go_ = GetDlgItem(IDC_BTN_GO);
 		prog_.SetRange(0, 100);
@@ -306,6 +225,26 @@ public:
 			SetDlgItemText(IDC_EDIT_IP, addr);
 		UINT r = GetPrivateProfileInt(_T("main"), _T("oldver"), 0, path);
 		CheckDlgButton(IDC_CHECK_OLD, r);
+		TCHAR files[4096];
+		if (GetPrivateProfileString(_T("main"), _T("files"), _T(""), files, 4096, path)) {
+			TCHAR* pf = files;
+			while (1) {
+				TCHAR* r = _tcschr(pf, '|');
+				if (r == NULL) {
+					int i = flist_.AddString(pf);
+					if (pf[0] == _T('<'))
+						flist_.SetItemData(i, 1);
+					break;
+				} else {
+					*r = 0;
+					int i = flist_.AddString(pf);
+					if (pf[0] == _T('<'))
+						flist_.SetItemData(i, 1);
+					pf = r + 1;
+				}
+			}
+		}
+		UpdateFileListButtons();
 
 		return TRUE;
 	}
@@ -319,28 +258,108 @@ public:
 		PathAppend(path, _T("FBIW.ini"));
 		WritePrivateProfileString(_T("main"), _T("address"), addr, path);
 		WritePrivateProfileString(_T("main"), _T("oldver"), IsDlgButtonChecked(IDC_CHECK_OLD) ? _T("1") : _T("0"), path);
+		TCHAR files[4096] = {0};
+		int count = flist_.GetCount();
+		for (int i = 0; i < count; ++i) {
+			TCHAR fname[256];
+			flist_.GetText(i, fname);
+			if (lstrlen(files) + 1 + lstrlen(fname) >= 4096) break;
+			if (i > 0)
+				lstrcat(files, _T("|"));
+			lstrcat(files, fname);
+		}
+		WritePrivateProfileString(_T("main"), _T("files"), files, path);
 		DestroyWindow();
 		::PostQuitMessage(0);
 	}
 
 	LRESULT OnSelFile(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/) {
+		if (hFile_ != INVALID_HANDLE_VALUE) return 0;
 		CFileDialog dialog(TRUE, _T("cia"), NULL, 0, _T("CIA files\0*.cia\0"), m_hWnd);
-		if (dialog.DoModal() == IDOK)
-			::SetWindowText(GetDlgItem(IDC_EDIT_FILE), dialog.m_szFileName);
+		if (dialog.DoModal() == IDOK) {
+			flist_.AddString(dialog.m_szFileName);
+			UpdateFileListButtons();
+		}
+		return 0;
+	}
+
+	LRESULT OnDelFile(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/) {
+		if (hFile_ != INVALID_HANDLE_VALUE) return 0;
+		int cur = flist_.GetCurSel();
+		if (cur < 0) return 0;
+		flist_.DeleteString(cur);
+		UpdateFileListButtons();
+		return 0;
+	}
+	
+	LRESULT OnMoveUp(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/) {
+		if (hFile_ != INVALID_HANDLE_VALUE) return 0;
+		int cur = flist_.GetCurSel();
+		if (cur <= 0) return 0;
+		TCHAR n[256];
+		flist_.GetText(cur, n);
+		DWORD_PTR data = flist_.GetItemData(cur);
+		flist_.DeleteString(cur);
+		flist_.InsertString(cur - 1, n);
+		flist_.SetItemData(cur - 1, data);
+		flist_.SetCurSel(cur - 1);
+		UpdateFileListButtons();
+		return 0;
+	}
+	
+	LRESULT OnMoveDown(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/) {
+		if (hFile_ != INVALID_HANDLE_VALUE) return 0;
+		int cur = flist_.GetCurSel();
+		if (cur < 0) return 0;
+		int count = flist_.GetCount();
+		if (cur + 1 >= count) return 0;
+		TCHAR n[256];
+		flist_.GetText(cur, n);
+		DWORD_PTR data = flist_.GetItemData(cur);
+		flist_.DeleteString(cur);
+		flist_.InsertString(cur + 1, n);
+		flist_.SetItemData(cur + 1, data);
+		flist_.SetCurSel(cur + 1);
+		UpdateFileListButtons();
+		return 0;
+	}
+
+	LRESULT OnClear(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/) {
+		if (hFile_ != INVALID_HANDLE_VALUE) return 0;
+		flist_.ResetContent();
+		UpdateFileListButtons();
 		return 0;
 	}
 
 	LRESULT OnStart(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/) {
-		Cleanup();
-		{
-			TCHAR fname[256];
-			::GetWindowText(GetDlgItem(IDC_EDIT_FILE), fname, 256);
-			files_ = (TCHAR**)malloc(sizeof(TCHAR*) * 1);
-			files_[0] = _tcsdup(fname);
-			fcount_ = 1;
-		}
+		if (GetPendingCount() == 0) return 0;
 		old_ = IsDlgButtonChecked(IDC_CHECK_OLD) != 0;
 		OpenNextFile();
+		UpdateFileListButtons();
+		StartConnect();
+		return 0;
+	}
+
+	LRESULT OnListSelChanged(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/) {
+		UpdateFileListButtons();
+		return 0;
+	}
+
+	void OnDrop(HDROP drop) {
+		TCHAR fn[256];
+		UINT count = DragQueryFile(drop, UINT_MAX, fn, 256);
+		for (UINT i = 0; i < count; ++i) {
+			if (DragQueryFile(drop, i, fn, 256)) {
+				if (lstrcmpi(PathFindExtension(fn), _T(".cia")) == 0) {
+					flist_.AddString(fn);
+				}
+			}
+		}
+		UpdateFileListButtons();
+	}
+
+private:
+	void StartConnect() {
 		char addr[256];
 		::GetWindowTextA(GetDlgItem(IDC_EDIT_IP), addr, 256);
 		struct hostent* he;
@@ -354,25 +373,17 @@ public:
 			rec_addr.sin_addr.s_addr = inet_addr(addr);
 		WSAAsyncSelect(sock, m_hWnd, WM_CUSTOM_NETWORK_MSG, FD_CONNECT | FD_CLOSE);
 		connect(sock, (struct sockaddr *)&rec_addr, sizeof(rec_addr));
-		return 0;
-	}
-
-	void OnDrop(HDROP drop) {
-		TCHAR fn[256];
-		UINT count = DragQueryFile(drop, UINT_MAX, fn, 256);
-		if (DragQueryFile(drop, 0, fn, 256)) {
-			if (lstrcmpi(PathFindExtension(fn), _T(".cia")) == 0)
-				::SetWindowText(GetDlgItem(IDC_EDIT_FILE), fn);
-		}
 	}
 
 	bool OpenNextFile() {
-		if (fcount_ == 0) return false;
-		hFile_ = CreateFile(files_[0], GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+		TCHAR fname[256];
+		if (!GetNextFileName(fname)) return false;
+		hFile_ = CreateFile(fname, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 		if (hFile_ == NULL || hFile_ == INVALID_HANDLE_VALUE) {
 			SetMsg(_T("Unable to open file for reading"));
 			return false;
 		}
+		totalRead_ = 0;
 		unsigned long hi;
 		totalSize_ = GetFileSize(hFile_, &hi);
 		totalSize_ |= (UINT64)hi << 32;
@@ -380,4 +391,154 @@ public:
 		SetMsg3(_T(""));
 		return true;
 	}
+
+	inline void SetProgress(BOOL force = FALSE) {
+		double now = CurrTime();
+		if (!force && now - lastTick_ < 0.5) return;
+		UINT64 spd = (UINT64)((double)(INT64)lastBytes_ / (now - lastTick_));
+		TCHAR spdtxt[32];
+		if (spd >= 1024 * 1024 * 10)
+			wsprintf(spdtxt, _T("%u.%03uMB/s"), (UINT32)(spd >> 20), (UINT32)((spd >> 10) & 0x3FF));
+		else if (spd >= 1024 * 10)
+			wsprintf(spdtxt, _T("%u.%03uKB/s"), (UINT32)(spd >> 10), (UINT32)(spd & 0x3FF));
+		else
+			wsprintf(spdtxt, _T("%uB/s"), (UINT32)spd);
+		SetMsg2(spdtxt);
+		UINT32 per = (UINT32)(totalRead_ * 100ui64 / totalSize_);
+		prog_.SetPos(per);
+		TCHAR ntxt[64];
+		wsprintf (ntxt, _T("%u%% (%I64u/%I64u)"), per, totalRead_, totalSize_);
+		SetMsg3(ntxt);
+
+		lastBytes_ = 0;
+		lastTick_ = now;
+	}
+
+	inline void SetMsg(LPCTSTR txt) {
+		SetDlgItemText(IDC_INFO, txt);
+	}
+
+	inline void SetMsg2(LPCTSTR txt) {
+		SetDlgItemText(IDC_INFO2, txt);
+	}
+
+	inline void SetMsg3(LPCTSTR txt) {
+		SetDlgItemText(IDC_INFO3, txt);
+	}
+
+	inline void StartTiming() {
+		LARGE_INTEGER freq;
+		QueryPerformanceFrequency(&freq);
+		frequency_ = freq.QuadPart;
+		lastTick_ = CurrTime();
+	}
+
+	double CurrTime() {
+		LARGE_INTEGER tm;
+		QueryPerformanceCounter(&tm);
+		return tm.QuadPart / (double)(INT64)frequency_;
+	}
+
+	void Cleanup() {
+		if (sock != 0) {
+			WSAAsyncSelect(sock, m_hWnd, WM_CUSTOM_NETWORK_MSG, 0);
+			closesocket(sock);
+			sock = 0;
+		}
+		if (hFile_ != INVALID_HANDLE_VALUE) {
+			CloseHandle(hFile_);
+			hFile_ = INVALID_HANDLE_VALUE;
+		}
+		sendPos_ = 0;
+		sendSize_ = 0;
+		totalRead_ = 0;
+		totalSize_ = 0;
+		frequency_ = 0;
+		lastTick_ = 0.;
+		lastBytes_ = 0;
+		::EnableWindow(GetDlgItem(IDC_BTN_SELFILE), TRUE);
+		::EnableWindow(GetDlgItem(IDC_BTN_DELFILE), TRUE);
+		::EnableWindow(GetDlgItem(IDC_BTN_MOVEUP), TRUE);
+		::EnableWindow(GetDlgItem(IDC_BTN_MOVEDOWN), TRUE);
+		UpdateFileListButtons();
+	}
+
+	UINT32 GetPendingCount() {
+		UINT32 result = 0;
+		int n = flist_.GetCount();
+		for (int i = 0; i < n; ++i) {
+			if (flist_.GetItemData(i) == 0)
+				++result;
+		}
+		return result;
+	}
+
+	inline void SetPendingFinished() {
+		int n = flist_.GetCount();
+		for (int i = 0; i < n; ++i) {
+			if (flist_.GetItemData(i) == 0) {
+				TCHAR fn[260] = _T("<O> ");
+				flist_.GetText(i, fn + 4);
+				flist_.DeleteString(i);
+				flist_.InsertString(i, fn);
+				flist_.SetItemData(i, 1);
+				break;
+			}
+		}
+	}
+
+	inline bool GetNextFileName(LPTSTR fn) {
+		int n = flist_.GetCount();
+		for (int i = 0; i < n; ++i) {
+			if (flist_.GetItemData(i) == 0) {
+				flist_.GetText(i, fn);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	void UpdateFileListButtons() {
+		if (hFile_ != INVALID_HANDLE_VALUE) {
+			::EnableWindow(GetDlgItem(IDC_BTN_GO), FALSE);
+			::EnableWindow(GetDlgItem(IDC_BTN_SELFILE), FALSE);
+			::EnableWindow(GetDlgItem(IDC_BTN_DELFILE), FALSE);
+			::EnableWindow(GetDlgItem(IDC_BTN_MOVEUP), FALSE);
+			::EnableWindow(GetDlgItem(IDC_BTN_MOVEDOWN), FALSE);
+			return;
+		}
+		BOOL f = FALSE;
+		int n = flist_.GetCount();
+		for (int i = 0; i < n; ++i) {
+			if (flist_.GetItemData(i) == 0) {
+				f = TRUE;
+				break;
+			}
+		}
+		::EnableWindow(GetDlgItem(IDC_BTN_GO), f);
+		int sel = flist_.GetCurSel();
+		int count = flist_.GetCount();
+		::EnableWindow(GetDlgItem(IDC_BTN_SELFILE), TRUE);
+		::EnableWindow(GetDlgItem(IDC_BTN_DELFILE), sel >= 0);
+		::EnableWindow(GetDlgItem(IDC_BTN_MOVEUP), sel > 0);
+		::EnableWindow(GetDlgItem(IDC_BTN_MOVEDOWN), sel >= 0 && sel + 1 < count);
+	}
+
+private:
+	int sock;
+	int status;
+	CStatic msg_, msg2_, msg3_;
+	CListBox flist_;
+	CProgressBarCtrl prog_;
+	CButton go_;
+	HANDLE hFile_;
+	char* sendbuf_;
+	UINT32 sendPos_;
+	UINT32 sendSize_;
+	UINT64 totalRead_;
+	UINT64 totalSize_;
+	UINT64 frequency_;
+	double lastTick_;
+	UINT64 lastBytes_;
+	bool old_;
 };
